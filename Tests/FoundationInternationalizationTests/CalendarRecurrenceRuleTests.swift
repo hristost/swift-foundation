@@ -1,10 +1,14 @@
+//===----------------------------------------------------------------------===//
 //
-//  CalendarRecurrenceRuleTests.swift
-//  Unit
+// This source file is part of the Swift.org open source project
 //
-//  Copyright (c) 2024, Apple Inc.
-//  All rights reserved.
+// Copyright (c) 2014 - 2024 Apple Inc. and the Swift project authors
+// Licensed under Apache License v2.0 with Runtime Library Exception
 //
+// See https://swift.org/LICENSE.txt for license information
+// See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+//===----------------------------------------------------------------------===//
 
 #if canImport(TestSupport)
 import TestSupport
@@ -17,38 +21,27 @@ import TestSupport
 @testable import FoundationEssentials
 #endif // FOUNDATION_FRAMEWORK
 
-@available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
+@available(FoundationPreview 0.4, *)
 final class CalendarRecurrenceRuleTests: XCTestCase {
-
-    func testRoundtripEncoding() throws {
-        // These are not necessarily valid recurrence rule, they are constructed
-        // in a way to test all encoding paths
-        var recurrenceRule1 = Calendar.RecurrenceRule(calendar: .current, frequency: .daily)
-        recurrenceRule1.interval = 2
-        recurrenceRule1.months = [1, 2, Calendar.RecurrenceRule.Month(4, isLeap: true)]
-        recurrenceRule1.weeks = [2, 3]
-        recurrenceRule1.weekdays = [.every(.monday), .nth(1, .wednesday)]
-        recurrenceRule1.end = .afterOccurrences(5)
+    func testYearlyRecurrenceInLunarCalendar() {
+        // Find the first day of the lunar new year
+        let start = Date(timeIntervalSince1970: 1726902000.0) // 2024-09-21T00:00:00-0700
+        let end   = Date(timeIntervalSince1970: 1855724400.0) // 2028-10-21T00:00:00-0700
         
-        var recurrenceRule2 = Calendar.RecurrenceRule(calendar: .init(identifier: .gregorian), frequency: .daily)
-        recurrenceRule2.months = [2, 10]
-        recurrenceRule2.weeks = [1, -1]
-        recurrenceRule2.setPositions = [1]
-        recurrenceRule2.hours = [14]
-        recurrenceRule2.minutes = [30]
-        recurrenceRule2.seconds = [0]
-        recurrenceRule2.daysOfTheYear = [1]
-        recurrenceRule2.daysOfTheMonth = [4]
-        recurrenceRule2.weekdays = [.every(.monday), .nth(1, .wednesday)]
-        recurrenceRule2.end = .afterDate(.distantFuture)
+        let lunarCalendar = Calendar(identifier: .chinese)
+        var rule = Calendar.RecurrenceRule(calendar: lunarCalendar, frequency: .yearly)
+        rule.daysOfTheYear = [1]
         
-        let recurrenceRule1JSON = try JSONEncoder().encode(recurrenceRule1)
-        let recurrenceRule2JSON = try JSONEncoder().encode(recurrenceRule2)
-        let decoded1 = try JSONDecoder().decode(Calendar.RecurrenceRule.self, from: recurrenceRule1JSON)
-        let decoded2 = try JSONDecoder().decode(Calendar.RecurrenceRule.self, from: recurrenceRule2JSON)
+        let eventStart = Date(timeIntervalSince1970: 1285102800.0) // 2010-09-21T14:00:00-0700
+        let results = Array(rule.recurrences(of: eventStart, in: start..<end))
         
-        XCTAssertEqual(recurrenceRule1, decoded1)
-        XCTAssertEqual(recurrenceRule2, decoded2)
-        XCTAssertNotEqual(recurrenceRule1, recurrenceRule2)
+        let expectedResults: [Date] = [
+            Date(timeIntervalSince1970: 1738188000.0), // 2025-01-29T14:00:00-0800
+            Date(timeIntervalSince1970: 1771365600.0), // 2026-02-17T14:00:00-0800
+            Date(timeIntervalSince1970: 1801951200.0), // 2027-02-06T14:00:00-0800
+            Date(timeIntervalSince1970: 1832536800.0), // 2028-01-26T14:00:00-0800
+        ]
+        
+        XCTAssertEqual(results, expectedResults)
     }
 }
