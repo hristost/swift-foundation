@@ -84,10 +84,10 @@ extension Calendar {
             /// The range in which the sequence should produce results
             let range: Range<Date>?
             
-            /// Interval containing `range.lowerBound`, that has the same length
-            /// as the frequency interval. This can be used as a lower bound for
-            /// ``nextBaseRecurrenceDate()``
-            let rangeLowerBoundInterval: DateInterval?
+            /// The lower bound of `range`, adjusted so that date expansions may
+            /// still fit in range even if this value is outside the range. This
+            /// value is used as a lower bound for ``nextBaseRecurrenceDate()``.
+            let rangeLowerBound: Date?
             
             /// How many occurrences have been found so far
             var resultsFound = 0
@@ -209,9 +209,9 @@ extension Calendar {
                 }
                 
                 if let range = range {
-                    rangeLowerBoundInterval = recurrence.calendar.dateInterval(of: frequency.component, for: range.lowerBound) 
+                    rangeLowerBound = recurrence.calendar.dateInterval(of: frequency.component, for: range.lowerBound)?.start
                 } else {
-                    rangeLowerBoundInterval = nil
+                    rangeLowerBound = nil
                 }
                 
                 // Create date components that enumerate recurrences without any
@@ -291,8 +291,8 @@ extension Calendar {
                     }
                     // If a range has been specified, we should skip a few extra 
                     // occurrences until we reach the start date
-                    if let rangeLowerBoundInterval {
-                        if nextDate < rangeLowerBoundInterval.start {
+                    if let rangeLowerBound {
+                        if nextDate < rangeLowerBound {
                             continue
                         }
                     }
