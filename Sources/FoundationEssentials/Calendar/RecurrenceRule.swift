@@ -109,13 +109,13 @@ extension Calendar {
         public var interval: Int
         /// When a recurring event stops recurring
         public struct End: Sendable, Equatable {
-            internal enum _End: Equatable {
+            private enum _End: Equatable {
                 case never
                 case afterDate(Date)
                 case afterOccurrences(Int)
             }
-            var _guts: _End
-            internal init(_guts: _End) {
+            private var _guts: _End
+            private init(_guts: _End) {
                 self._guts = _guts
             }
             /// The event stops repeating after a given number of times
@@ -134,6 +134,19 @@ extension Calendar {
             /// The event repeats indefinitely
             public static var never: Self {
                 .init(_guts: .never)
+            }
+            
+            internal var until: Date? {
+                switch _guts {
+                    case let .afterDate(date): date
+                    default: nil
+                }
+            }
+            internal var count: Int? {
+                switch _guts {
+                    case let .afterOccurrences(count): count
+                    default: nil
+                }
             }
         }
         /// For how long the event repeats

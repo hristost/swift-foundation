@@ -341,7 +341,7 @@ extension Calendar {
                 
                 dates = dates.filter { $0 >= self.start }
                 
-                if case let .afterDate(limit) = recurrence.end._guts {
+                if let limit = recurrence.end.until {
                     let hadDates = !dates.isEmpty
                     dates = dates.filter { $0 <= limit }
                     if hadDates && dates.isEmpty {
@@ -369,7 +369,7 @@ extension Calendar {
             
             mutating func next() -> Element? {
                 guard !finished else { return nil }
-                if case let .afterOccurrences(limit) = recurrence.end._guts, resultsFound >= limit {
+                if let limit = recurrence.end.count, resultsFound >= limit {
                     finished = true
                     return nil
                 }
@@ -377,7 +377,7 @@ extension Calendar {
                 while !finished {
                     if let date = currentGroup.popLast() {
                         resultsFound += 1
-                        if case let .afterDate(limit) = recurrence.end._guts, date > limit {
+                        if let limit = recurrence.end.until, date > limit {
                             finished = true
                             return nil
                         }
@@ -573,10 +573,10 @@ extension Calendar.RecurrenceRule {
 
                     }
                     for date in calendar.dates(byMatching: components,
-                                                          startingAt: enumerationDateInterval.start,
-                                                          in: enumerationDateInterval.start..<enumerationDateInterval.end,
-                                                          matchingPolicy: matchingPolicy,
-                                                          repeatedTimePolicy: repeatedTimePolicy) {
+                                               startingAt: enumerationDateInterval.start,
+                                               in: enumerationDateInterval.start..<enumerationDateInterval.end,
+                                               matchingPolicy: matchingPolicy,
+                                               repeatedTimePolicy: repeatedTimePolicy) {
                         expandedDates.append(date)
                     }
                 }
@@ -627,10 +627,10 @@ extension Calendar.RecurrenceRule {
                 var expandedDates: [Date] = []
                 for components in componentsForEnumerating {
                     for date in calendar.dates(byMatching: components,
-                                                          startingAt: enumerationDateInterval.start,
-                                                          in: enumerationDateInterval.start..<enumerationDateInterval.end,
-                                                          matchingPolicy: matchingPolicy,
-                                                          repeatedTimePolicy: repeatedTimePolicy) {
+                                               startingAt: enumerationDateInterval.start,
+                                               in: enumerationDateInterval.start..<enumerationDateInterval.end,
+                                               matchingPolicy: matchingPolicy,
+                                               repeatedTimePolicy: repeatedTimePolicy) {
                         expandedDates.append(date)
                     }
                 }
@@ -687,10 +687,10 @@ extension Calendar.RecurrenceRule {
                         expandedDates.append(date)
                     }
                     for date in calendar.dates(byMatching: components,
-                                                          startingAt: enumerationDateInterval.start,
-                                                          in: enumerationDateInterval.start..<enumerationDateInterval.end,
-                                                          matchingPolicy: matchingPolicy,
-                                                          repeatedTimePolicy: repeatedTimePolicy) {
+                                               startingAt: enumerationDateInterval.start,
+                                               in: enumerationDateInterval.start..<enumerationDateInterval.end,
+                                               matchingPolicy: matchingPolicy,
+                                               repeatedTimePolicy: repeatedTimePolicy) {
                         expandedDates.append(date)
                     }
                 }
