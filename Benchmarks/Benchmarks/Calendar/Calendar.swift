@@ -39,7 +39,37 @@ let benchmarks = {
             }
         }
     }
-    
+    Benchmark("nextThousandThanksgivingsSequence") { benchmark in
+        var count = 1000
+        for _ in cal.dates(byMatching: thanksgivingComponents, startingAt: thanksgivingStart, matchingPolicy: .nextTime) {
+            count -= 1
+            if count == 0 {
+                break
+            }
+        }
+    }
+    Benchmark("nextThousandThanksgivingsUsingRecurrenceRule") { benchmark in
+        var rule = Calendar.RecurrenceRule(calendar: cal, frequency: .yearly, end: .afterOccurrences(1000))
+        rule.months = [11]
+        rule.weekdays = [.nth(4, .thursday)]
+        rule.matchingPolicy = .nextTime
+        var count = 0
+        for _ in rule.recurrences(of: thanksgivingStart) {
+            count += 1
+        }
+        assert(count == 1000)
+    }
+    Benchmark("CurrentDateComponentsFromThanksgivings") { benchmark in
+        var count = 1000
+        currentCalendar.enumerateDates(startingAfter: thanksgivingStart, matching: thanksgivingComponents, matchingPolicy: .nextTime) { result, exactMatch, stop in
+            count -= 1
+            _ = currentCalendar.dateComponents([.era, .year, .month, .day, .hour, .minute, .second, .nanosecond, .weekday, .weekdayOrdinal, .quarter, .weekOfMonth, .weekOfYear, .yearForWeekOfYear, .calendar, .timeZone], from: result!)
+            if count == 0 {
+                stop = true
+            }
+        }
+    }
+
     let reference = Date(timeIntervalSinceReferenceDate: 496359355.795410) //2016-09-23T14:35:55-0700
     
     Benchmark("allocationsForFixedCalendars", configuration: .init(scalingFactor: .mega)) { benchmark in
