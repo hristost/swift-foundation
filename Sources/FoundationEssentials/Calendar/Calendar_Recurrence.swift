@@ -470,7 +470,7 @@ extension Calendar.RecurrenceRule {
     }
     
     internal func _expandOrLimitMonths(dates: inout [Date], anchor: Date, action: ComponentAction) {
-        let monthRange = calendar.range(of: .month, in: .year, for: anchor)
+        lazy var monthRange = calendar.range(of: .month, in: .year, for: anchor)
         let months = months.map { month in
             if month.index > 0 {
                 return month
@@ -490,7 +490,7 @@ extension Calendar.RecurrenceRule {
                 }
             }
         } else {
-            let componentSet: Calendar.ComponentSet = [ .era, .year, .month, .isLeapMonth, .day, .hour, .minute, .second, .nanosecond ]
+            let componentSet: Calendar.ComponentSet = [ .month, .isLeapMonth, .day, .hour, .minute, .second, .nanosecond ]
             
             let anchorComponents = calendar._dateComponents(componentSet, from: anchor)
             let daysInYear = calendar.dateInterval(of: .year, for: anchor)!
@@ -723,13 +723,17 @@ extension Calendar.RecurrenceRule {
             }
         } else {
             // Expand
-            let range = calendar.dateInterval(of: frequency.component, for: anchor)!
-            let start = range.start
+            let componentForRange: Calendar.Component = switch frequency {
+            case .yearly, .monthly: parentComponent
+            default: frequency.component
+            }
             dates = dates.flatMap { anchor in
                 var dates: [Date] = []
                 let weekdayComponents = _weekdayComponents(for: weekdays,
                                                            in: parentComponent,
                                                            anchor: anchor)
+                let range = calendar.dateInterval(of: componentForRange, for: anchor)!
+                let start = range.start
                 for dc in weekdayComponents! {
                     var dc = dc
                     if frequency.component == .weekOfMonth {
@@ -780,18 +784,15 @@ extension Calendar.RecurrenceRule {
         
         /// The component where we set the week number, if we are targeting only
         /// a particular occurence of a weekday
-        let weekComponent: Calendar.Component
-        /// The components we return for matching and enumeration
-        let componentSet: Calendar.ComponentSet
-        
-        if parent == .month {
-            componentSet = [.era, .year, .month, .isLeapMonth, .weekOfMonth, .weekday, .hour, .minute, .second, .nanosecond]
-            weekComponent = .weekOfMonth
+        let weekComponent: Calendar.Component = if parent == .month {
+            .weekOfMonth
         } else {
-            componentSet = [.era, .year, .weekOfYear, .weekday, .hour, .minute, .second, .nanosecond]
-            weekComponent = .weekOfYear
+            .weekOfYear
         }
+        /// The components we return for matching and enumeration
+        let componentSet: Calendar.ComponentSet = [.weekday, .hour, .minute, .second, .nanosecond]
         
+                
         guard
             let weekRange = calendar.range(of: weekComponent, in: parent, for: anchor),
             let interval = calendar.dateInterval(of: parent, for: anchor)
@@ -801,11 +802,11 @@ extension Calendar.RecurrenceRule {
         var result: [DateComponents] = []
         let anchorComponents = calendar._dateComponents(componentSet, from: anchor)
         
-        let firstWeekday = calendar.component(.weekday, from: interval.start)
+        lazy var firstWeekday = calendar.component(.weekday, from: interval.start)
         // The end of the interval would always be midnight on the day after, so
         // it falls on the day after the last day in the interval. Subtracting a
         // few seconds can give us the last day in the interval
-        let lastWeekday  = calendar.component(.weekday, from: interval.end.addingTimeInterval(-0.1))
+        lazy var lastWeekday  = calendar.component(.weekday, from: interval.end.addingTimeInterval(-0.1))
         
         for (weekday, occurences) in map {
             let weekdayIdx = weekday.icuIndex
@@ -815,8 +816,8 @@ extension Calendar.RecurrenceRule {
                 components.weekday = weekdayIdx
                 result.append(components)
             } else {
-                let firstWeek = weekRange.lowerBound + (weekdayIdx < firstWeekday ? 1 : 0)
-                let lastWeek  = weekRange.upperBound - (weekdayIdx > lastWeekday  ? 1 : 0)
+                lazy var firstWeek = weekRange.lowerBound + (weekdayIdx < firstWeekday ? 1 : 0)
+                lazy var lastWeek  = weekRange.upperBound - (weekdayIdx > lastWeekday  ? 1 : 0)
                 for occurence in occurences {
                     var components = anchorComponents
                     if occurence > 0 {
