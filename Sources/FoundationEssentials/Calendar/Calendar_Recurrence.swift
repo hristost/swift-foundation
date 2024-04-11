@@ -118,11 +118,11 @@ extension Calendar {
                           matching recurrence: RecurrenceRule,
                           range: Range<Date>?) {
                 // Copy the calendar if it's autoupdating
-                var recurrenceWithConstantCalendar = recurrence
+                var recurrence = recurrence
                 if recurrence.calendar == .autoupdatingCurrent {
-                    recurrenceWithConstantCalendar.calendar = .current
+                    recurrence.calendar = .current
                 }
-                self.recurrence = recurrenceWithConstantCalendar
+                self.recurrence = recurrence
                 
                 self.start = start
                 self.range = range
@@ -208,7 +208,7 @@ extension Calendar {
                     secondAction = .expand
                 }
                 
-                if let range = range {
+                if let range {
                     rangeLowerBound = recurrence.calendar.dateInterval(of: frequency.component, for: range.lowerBound)?.start
                 } else {
                     rangeLowerBound = nil
@@ -271,8 +271,11 @@ extension Calendar {
             /// frequency
             var currentGroup: [Date] = []
             
-            /// Calculate the next recurrence without any rules applied
-            mutating func nextBaseRecurrenceDate() -> Date? {
+            /// Compute `currentGroup` by advancing by a frequency interval from
+            /// the most recent group
+            mutating func nextGroup() {
+                precondition(finished == false)
+                var anchor: Date? = nil
                 func next() -> Date? {
                     let nextDate: Date?
                     if iterations == 0 {
@@ -284,6 +287,7 @@ extension Calendar {
                     iterations += 1
                     return nextDate
                 }
+                /// Calculate the next recurrence without any rules applied
                 while let nextDate = next() {
                     // Skip every few iterations when an interval has been given
                     if (iterations - 1) % recurrence.interval != 0 {
@@ -291,51 +295,47 @@ extension Calendar {
                     }
                     // If a range has been specified, we should skip a few extra 
                     // occurrences until we reach the start date
-                    if let rangeLowerBound {
-                        if nextDate < rangeLowerBound {
-                            continue
-                        }
+                    if let rangeLowerBound, nextDate < rangeLowerBound {
+                        continue
                     }
-                    return nextDate
+                    anchor = nextDate
+                    break
                 }
-                return nil
-            }
             
-            /// Compute `currentGroup` by advancing by a frequency interval from
-            /// the most recent group
-            mutating func nextGroup() {
-                guard let date = self.nextBaseRecurrenceDate() else {
+                guard let anchor else {
                     finished = true
                     return
                 }
                 
-                var dates: [Date] = [date]
+                var dates: [Date] = [anchor]
                  
-                // First expand the set of dates, and then filter it
+                // First expand the set of dates, and then filter it. The order
+                // of expansions is fixed, and must stay exactly as it is so we
+                // conform to RFC5545
                 for action in [ComponentAction.expand, ComponentAction.limit] {
                     if monthAction == action {
-                        recurrence._expandOrLimitMonths(dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitMonths(dates: &dates, anchor: anchor, action: action)
                     }
                     if weekAction == action, action == .expand {
-                        recurrence._expandWeeks(dates: &dates, anchor: date) 
+                        recurrence._expandWeeks(dates: &dates, anchor: anchor) 
                     }
                     if dayOfYearAction == action {
-                        recurrence._expandOrLimitDaysOfTheYear(dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitDaysOfTheYear(dates: &dates, anchor: anchor, action: action)
                     }
                     if dayOfMonthAction == action {
-                        recurrence._expandOrLimitDaysOfTheMonth(dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitDaysOfTheMonth(dates: &dates, anchor: anchor, action: action)
                     }
                     if weekdayAction == action {
-                        recurrence._expandOrLimitWeekdays(dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitWeekdays(dates: &dates, anchor: anchor, action: action)
                     }
                     if hourAction == action {
-                        recurrence._expandOrLimitTimeComponent(.hour, dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitTimeComponent(.hour, dates: &dates, anchor: anchor, action: action)
                     }
                     if minuteAction == action {
-                        recurrence._expandOrLimitTimeComponent(.minute, dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitTimeComponent(.minute, dates: &dates, anchor: anchor, action: action)
                     }
                     if secondAction == action {
-                        recurrence._expandOrLimitTimeComponent(.second, dates: &dates, anchor: date, action: action)
+                        recurrence._expandOrLimitTimeComponent(.second, dates: &dates, anchor: anchor, action: action)
                     }
                 }
                 
