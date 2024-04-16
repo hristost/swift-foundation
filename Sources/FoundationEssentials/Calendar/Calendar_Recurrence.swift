@@ -29,6 +29,13 @@ extension Calendar.RecurrenceRule.Frequency {
         }
     }
 }
+@available(FoundationPreview 0.4, *)
+extension Calendar.RecurrenceRule.Month {
+    init?(from comps: DateComponents) {
+        guard let month = comps.month else { return nil }
+        self.init(month, isLeap: comps.isLeapMonth ?? false) 
+    }
+}
 
 /// The action of a component of the recurrence rule.
 ///
@@ -99,6 +106,7 @@ extension Calendar {
             /// This does not include the start date itself.
             var baseRecurrence: Calendar.DatesByMatching.Iterator
             
+            var componentsForEnumerating: DateComponents
             /// How many elements we have consumed from `baseRecurrence` 
             var iterations: Int = 0
             
@@ -240,7 +248,7 @@ extension Calendar {
                     case .yearly:   [.second, .minute, .hour, .day, .month]
                 }
 #endif
-                let componentsForEnumerating = recurrence.calendar._dateComponents(components, from: start) 
+                componentsForEnumerating = recurrence.calendar._dateComponents(components, from: start) 
                 
                 let rangeForBaseRecurrence: Range<Date>? = nil
                 baseRecurrence = Calendar.DatesByMatching(calendar: recurrence.calendar,
@@ -307,12 +315,42 @@ extension Calendar {
                     return
                 }
                 
+                let calendar = recurrence.calendar
+                                
                 var dates: [Date] = [anchor]
+                     
+                let components = calendar._dateComponents([.second, .minute, .hour, .day, .month, .isLeapMonth, .dayOfYear, .weekday], from: anchor) 
+                
+                let months: [RecurrenceRule.Month]?
+                let daysOfTheMonth: [Int]?
+                let daysOfTheYear: [Int]?
+                if recurrence.daysOfTheYear.isEmpty {
+                    months = if recurrence.months.isEmpty { [RecurrenceRule.Month(from: components)!] } else { recurrence.months }
+                    daysOfTheMonth = if recurrence.daysOfTheMonth.isEmpty { [components.day!] } else { recurrence.daysOfTheMonth}
+                    daysOfTheYear = nil
+                } else {
+                    months = nil
+                    daysOfTheMonth = nil
+                    daysOfTheYear = if recurrence.daysOfTheYear.isEmpty { [components.day!] } else { recurrence.daysOfTheYear}
+                }
+                let hours = if recurrence.hours.isEmpty { [components.hour!] } else { recurrence.hours }
+                let minutes = if recurrence.minutes.isEmpty { [components.minute!] } else { recurrence.minutes }
+                let seconds = if recurrence.seconds.isEmpty { [components.second!] } else { recurrence.seconds }
+                let searchInterval = calendar.dateInterval(of: recurrence.frequency.component, for: anchor)!
+                let searchRange = searchInterval.start..<searchInterval.end
+                let searchStart = searchInterval.start
+                let componentCombinations = Calendar._DateComponentsCombinations(daysOfMonth: daysOfTheMonth,
+                                                                                 daysOfYear: daysOfTheYear, 
+                                                                                 months: months,
+                                                                                 hours: hours,
+                                                                                 minutes: minutes,
+                                                                                 seconds: seconds)  
+                dates = calendar._enumerateDates(startingAfter: searchStart, matching: componentCombinations, in: searchRange, matchingPolicy: recurrence.matchingPolicy, repeatedTimePolicy: recurrence.repeatedTimePolicy) 
                  
                 // First expand the set of dates, and then filter it. The order
                 // of expansions is fixed, and must stay exactly as it is so we
                 // conform to RFC5545
-                for action in [ComponentAction.expand, ComponentAction.limit] {
+                for action in [ComponentAction.limit] {
                     if monthAction == action {
                         recurrence._expandOrLimitMonths(dates: &dates, anchor: anchor, action: action)
                     }
@@ -832,5 +870,212 @@ extension Calendar.RecurrenceRule {
             }
         }
         return result
+    }
+}
+
+extension Calendar {
+    struct _DateComponentsCombinations {
+        var daysOfMonth: [Int]?
+        var daysOfYear: [Int]?
+        var months: [RecurrenceRule.Month]?
+        var hours: [Int]
+        var minutes: [Int]
+        var seconds: [Int]
+    }
+    
+    internal func _normalizeMonths(_ months: [Calendar.RecurrenceRule.Month], for anchor: Date) -> [Calendar.RecurrenceRule.Month] {
+        lazy var monthRange = self.range(of: .month, in: .year, for: anchor)
+        return months.map { month in
+            if month.index > 0 {
+                return month
+            } else {
+                let newIndex = monthRange!.upperBound + month.index
+                // The upper bound is the last month plus one. Subtracting 1 we get the last month
+                return Calendar.RecurrenceRule.Month(newIndex, isLeap: month.isLeap)
+            }
+        }
+    }
+    
+    internal func _normalizeDaysOfMonth(_ days: [Int], for anchor: Date) -> [Int] {
+        lazy var dayRange = self.range(of: .day, in: .month, for: anchor)
+        return days.map { day in
+            if day > 0 {
+                day
+            } else {
+                dayRange!.upperBound + day
+            }
+        }
+    }
+    
+    internal func _normalizeDaysOfYear(_ days: [Int], for anchor: Date) -> [Int] {
+        lazy var dayRange = self.range(of: .day, in: .year, for: anchor)
+        return days.map { day in
+            if day > 0 {
+                day
+            } else {
+                dayRange!.upperBound + day
+            }
+        }
+    }
+    
+    fileprivate func _matchingDates(after startDate: Date,
+                        matching combinationComponents: _DateComponentsCombinations,
+                        direction: SearchDirection,
+                        matchingPolicy: MatchingPolicy,
+                        repeatedTimePolicy: RepeatedTimePolicy) throws -> [(Date, DateComponents)]? {
+
+        let isStrictMatching = matchingPolicy == .strict
+
+        var dates = [(date: startDate, components: DateComponents())]
+
+        if let daysOfYear = combinationComponents.daysOfYear {
+            dates = try dates.flatMap { date, comps in
+                try _normalizeDaysOfYear(daysOfYear, for: date).map { day in
+                    var comps = comps
+                    comps.dayOfYear = day
+                    return try dateAfterMatchingDayOfYear(startingAt: date, components: comps, direction: direction).map { ($0, comps) } ?? (date, comps)
+                }
+            }
+        }
+
+        if let months = combinationComponents.months {
+            dates = try dates.flatMap { date, comps in
+                try _normalizeMonths(months, for: date).map { month in
+                    var comps = comps
+                    comps.month = month.index
+                    comps.isLeapMonth = month.isLeap
+                    return try dateAfterMatchingMonth(startingAt: date, components: comps, direction: direction, strictMatching: isStrictMatching).map { ($0, comps) } ?? (date, comps)
+                }
+            }
+        }
+        if let daysOfMonth = combinationComponents.daysOfMonth {
+            dates = try dates.flatMap { date, comps in
+                try _normalizeDaysOfMonth(daysOfMonth, for: date).map { day in
+                    var comps = comps
+                    comps.day = day
+                    return try dateAfterMatchingDay(startingAt: date, originalStartDate: startDate, components: comps, direction: direction).map { ($0, comps) } ?? (date, comps)
+                }
+            }
+        }
+
+        dates = try dates.flatMap { date, comps in
+            try combinationComponents.hours.map { hour in
+                var comps = comps
+                comps.hour = hour
+                return try dateAfterMatchingHour(startingAt: date, originalStartDate: startDate, components: comps, direction: direction, findLastMatch: repeatedTimePolicy == .last, isStrictMatching: isStrictMatching, matchingPolicy: matchingPolicy).map { ($0, comps) } ?? (date, comps)
+            }
+        }
+
+        dates = try dates.flatMap { date, comps in
+            try combinationComponents.minutes.map { minute in
+                var comps = comps
+                comps.minute = minute
+                return try dateAfterMatchingMinute(startingAt: date, components: comps, direction: direction).map { ($0, comps) } ?? (date, comps)
+            }
+        }
+
+        dates = try dates.flatMap { date, comps in
+            try combinationComponents.seconds.map { second in
+                var comps = comps
+                comps.second = second
+                return try dateAfterMatchingSecond(startingAt: date, originalStartDate: startDate, components: comps, direction: direction).map { ($0, comps) } ?? (date, comps)
+            }
+        }
+
+        return dates
+    }
+    // Returns nil if there was no result. It's up to the caller to decide what to do about that (try again, or cancel).
+    fileprivate func _enumerateDatesStep(startingAfter start: Date,
+                                         matching combinationComponents: _DateComponentsCombinations,
+                                         matchingPolicy: MatchingPolicy,
+                                         repeatedTimePolicy: RepeatedTimePolicy,
+                                         direction: SearchDirection,
+                                         inSearchingDate searchingDate: Date,
+                                         previouslyReturnedMatchDate: Date?) throws -> [(SearchStepResult, DateComponents)] {
+
+        guard let unadjustedMatchDates = try _matchingDates(after: searchingDate, matching: combinationComponents, direction: direction, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy) else {
+            return []
+        }
+        
+        return try unadjustedMatchDates.map { date, components in
+            (try _adjustedDate(date, startingAfter: searchingDate, matching: components, adjustedMatchingComponents: components , matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy, direction: direction, inSearchingDate: searchingDate, previouslyReturnedMatchDate: previouslyReturnedMatchDate), components)
+        }
+    }
+    internal func _enumerateDates(startingAfter start: Date,
+                                  matching matchingComponents: _DateComponentsCombinations,
+                                  in range: Range<Date>,
+                                  matchingPolicy: MatchingPolicy,
+                                  repeatedTimePolicy: RepeatedTimePolicy) -> [Date] {
+        // TODO: A lazy sequence might be more optimized
+      
+        guard start.isValidForEnumeration else { return [] }
+
+
+        var foundDates: [Date] = []
+        
+        var searchingDate = start
+        var previouslyReturnedMatchDate: Date? = nil
+
+        var results: [(Calendar.SearchStepResult, DateComponents)]
+        do {
+            results = try _enumerateDatesStep(startingAfter: start, matching: matchingComponents, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy, direction: .forward, inSearchingDate: searchingDate, previouslyReturnedMatchDate: previouslyReturnedMatchDate)
+        } catch (let e as CalendarEnumerationError) {
+            //_handleCalendarError(e, date: start, calendar: self, comps: matchingComponents, direction: direction, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy)
+            return []
+        } catch {
+            fatalError("Unexpected Calendar enumeration error type")
+        }
+            
+        for (result, components) in results {
+            searchingDate = result.newSearchDate
+            
+            if let (matchDate, exactMatch) = result.result {
+                var stop = false
+                previouslyReturnedMatchDate = matchDate
+                if range.contains(matchDate) {
+                    foundDates.append(matchDate)
+                }
+            }
+            
+            var iterations = 0
+            repeat {
+                iterations += 1
+                do {
+                    let result = try _enumerateDatesStep(startingAfter: start, matching: components, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy, direction: .forward, inSearchingDate: searchingDate, previouslyReturnedMatchDate: previouslyReturnedMatchDate)
+                    searchingDate = result.newSearchDate
+                    // Return a value if we have a result. Else, continue on searching unless we've hit our search limit.
+                    // This version of the implementation ignores the 'exactMatch' result. Nobody cares unless they specify `strict`, and if they do that all results are exact anyway.
+                    if let (matchDate, _) = result.result {
+                        
+                        if range.contains(matchDate) {
+                            // We are outside the scope of our search
+                            foundDates.append(matchDate)
+                        } else {
+                            break
+                        }
+                        
+                        previouslyReturnedMatchDate = matchDate
+                    }
+                    
+                    if (iterations < 100) {
+                        // Try again on nil result or not-exact match
+                        searchingDate = result.newSearchDate
+                        continue
+                    } else {
+                        // Give up
+                        //_handleCalendarResultNotFound(date: start, calendar: calendar, comps: matchingComponents, direction: direction, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy)
+                        break
+                    }
+                } catch (let e as CalendarEnumerationError) {
+                    //_handleCalendarError(e, date: start, calendar: self, comps: matchingComponents, direction: direction, matchingPolicy: matchingPolicy, repeatedTimePolicy: repeatedTimePolicy)
+                    return []
+                } catch {
+                    fatalError("Unexpected Calendar enumeration error type")
+                }
+                
+            } while true
+            
+        }
+        return foundDates
     }
 }
